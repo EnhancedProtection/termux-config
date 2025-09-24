@@ -1,52 +1,86 @@
 #!/bin/bash
+#========================================
+# Android Root Utility Tool
+# Features:
+#   1. Clear cache of all user-installed apps
+#   2. Force-stop all user-installed apps except Termux
+#   3. Toggle Wireless ADB on/off
+#========================================
 
-user_id=$(id -u)
-if [[ $user_id -ne 0 ]]; then
-    echo "Please run this script as a root user!"
+# Ensure script is running as root (id -u == 0)
+if [[ $(id -u) -ne 0 ]]; then
+    echo "[!] Please run this script as root (su)."
     exit 1
 fi
 
+# Use Android's system binaries explicitly
 PATH=/system/bin
-packages=$(pm list packages -3 | cut -d: -f2)
 
-force_stop() {
-    for package in $packages; do
-        if [ $package == "com.termux" ] ; then
-            echo "Skipping: ${package}"
-           continue;
+# Get list of user-installed package names
+USER_PACKAGES=$(pm list packages -3 | cut -d: -f2)
+
+#-----------------------------
+# Force-stop all user-installed apps (except Termux)
+force_stop_apps() {
+    for pkg in $USER_PACKAGES; do
+        if [[ "$pkg" == "com.termux" ]]; then
+            echo "[SKIP] $pkg"
         else
-            echo "Killing: ${package}"
-            am force-stop $package
+            echo "[KILL] $pkg"
+            am force-stop "$pkg"
         fi
     done
 }
 
-
-clear_cache() {
-    for package in $packages; do
-        echo "Clearing: ${package}"
-        pm clear --cache-only $package
+#-----------------------------
+# Clear cache for all user-installed apps
+clear_app_cache() {
+    for pkg in $USER_PACKAGES; do
+        echo "[CACHE CLEAR] $pkg"
+        pm clear --cache-only "$pkg" 2>/dev/null
     done
-}  
+}
 
+#-----------------------------
+# Toggle Wireless ADB on port 5555
+toggle_wireless_adb() {
+    local current_port
+    current_port=$(getprop service.adb.tcp.port)
 
-echo "Welcome to all in one tool (root)
-1. Clear Cache
-2. Force Stop
-0. Exit
-"
-read -p "Please choose an option: " choice
+    if [[ "$current_port" != "5555" ]]; then
+        echo "[ADB] Enabling Wireless ADB on port 5555"
+        setprop service.adb.tcp.port 5555
+    else
+        echo "[ADB] Disabling Wireless ADB"
+        setprop service.adb.tcp.port 0
+    fi
 
-if [ $choice -eq 0 ]; then
-    echo "Bye...!"
-elif [ $choice -eq 1 ]; then
-    echo "Okay baby clearing cache!"
-    clear_cache
-elif [ $choice -eq 2 ]; then
-    echo "Okay baby force stopp!"
-    force_stop
-else
-    echo "Betichod ye option hi nhi hai!"
-fi
+    stop adbd && start adbd
+}
 
+#-----------------------------
+# Menu
+show_menu() {
+    printf "\ec"
+    echo "============================="
+    echo "   Android Root Utility Tool  "
+    echo "============================="
+    echo "1) Clear App Cache"
+    echo "2) Force-Stop Apps"
+    echo "3) Toggle Wireless ADB"
+    echo "0) Exit"
+    echo "-----------------------------"
+}
 
+#-----------------------------
+# Main loop
+show_menu
+read -rp "Select an option: " choice
+
+case $choice in
+    0) echo "Bye!" ;;
+    1) clear_app_cache ;;
+    2) force_stop_apps ;;
+    3) toggle_wireless_adb ;;
+    *) echo "[!] Invalid selection. Exiting." ;;
+esac
